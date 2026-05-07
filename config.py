@@ -1,0 +1,43 @@
+"""SEC EDGAR 爬虫配置"""
+
+# SEC EDGAR 页面 URL
+EDGAR_PAGE_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent"
+
+# SEC EDGAR RSS (Atom) 订阅 URL（基础部分，不含 start/count）
+EDGAR_RSS_BASE = (
+    "https://www.sec.gov/cgi-bin/browse-edgar"
+    "?action=getcurrent"
+    "&CIK="
+    "&type="
+    "&company="
+    "&dateb="
+    "&owner=include"
+    "&output=atom"
+)
+
+# 分页参数
+PAGE_SIZE = 100    # 每页条数（SEC 最大值 100）
+TOTAL_COUNT = 1000 # 目标总抓取条数
+
+# HTTP 请求头 — SEC 要求提供 User-Agent 并包含联系邮箱
+HEADERS = {
+    "User-Agent": "financial_web_fetch/1.0 (contact@example.com)",
+    "Accept": "application/atom+xml, application/xml, text/xml, */*",
+}
+
+# 请求超时（秒）
+REQUEST_TIMEOUT = 60
+
+# 重试参数
+MAX_RETRIES = 3           # 最大重试次数
+RETRY_DELAY = 5           # 重试间隔（秒）
+
+# 分页请求间隔（秒）— 避免触发 SEC 频率限制
+PAGE_DELAY = 1
+
+# 每下载 N 个文件后的延迟（秒）
+DOWNLOAD_BATCH = 10       # 每批次文件数
+DOWNLOAD_DELAY = 0.5      # 批次间延迟
+
+# 输出目录
+OUTPUT_DIR = "output"
