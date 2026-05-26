@@ -232,19 +232,18 @@ class EdgarScraper:
         self,
         entries: list[dict[str, Any]],
         conn=None,
-        target_id: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """遍历每条记录，抓取 index 页面，下载 Document Format Files 表格中的
         所有文档（html / xml / txt），每个 AccNo 建立独立文件夹。
-        如果提供了 conn 和 target_id，则跳过已入库的记录并将新记录写入数据库。"""
+        如果提供了 conn，则跳过已入库的记录并将新记录写入数据库。"""
         total = len(entries)
         downloaded_accnos: dict[str, dict[str, str]] = {}  # accno -> documents dict
         download_count = 0  # 累计下载计数，用于批次限速
 
         # 查询已入库的 accession_no，用于去重
         existing_accnos: set[str] = set()
-        if conn and target_id:
-            existing_accnos = db.get_existing_accnos(conn, target_id)
+        if conn:
+            existing_accnos = db.get_existing_accnos(conn)
             if existing_accnos:
                 print(f"[DB] 已有 {len(existing_accnos)} 条历史记录，将跳过重复项")
 
@@ -275,8 +274,8 @@ class EdgarScraper:
                 entry["documents"] = {}
                 downloaded_accnos[accno] = {}
                 # 记录到数据库（状态 failed）
-                if conn and target_id:
-                    db.insert_filing(conn, target_id, entry, status="failed")
+                if conn:
+                    db.insert_filing(conn, entry, company_name=self.company, cik=self.cik, status="failed")
                 continue
 
             filing_dir = os.path.join(self.output_dir, "filings", accno)
@@ -306,8 +305,8 @@ class EdgarScraper:
             downloaded_accnos[accno] = documents
 
             # 写入数据库
-            if conn and target_id:
-                db.insert_filing(conn, target_id, entry, status="ready")
+            if conn:
+                db.insert_filing(conn, entry, company_name=self.company, cik=self.cik, status="ready")
                 items_new += 1
 
         print(f"[+] 处理完成: 新增 {items_new} 条，跳过 {items_skipped} 条")
@@ -337,14 +336,14 @@ class EdgarScraper:
     # 高层接口
     # ------------------------------------------------------------------
 
-    def run(self, conn=None, target_id: int | None = None) -> tuple[list[dict[str, Any]], int]:
+    def run(self, conn=None) -> tuple[list[dict[str, Any]], int]:
         """执行完整抓取流程: 抓取 → 下载 → 入库 → 保存 → 打印。
         返回 (entries, items_new)。"""
         entries = self.fetch_all_rss()
         items_new = 0
 
         if entries:
-            entries, items_new = self.process_entries(entries, conn=conn, target_id=target_id)
+            entries, items_new = self.process_entries(entries, conn=conn)
             self.save_to_json(entries)
             self.print_entries(entries)
         else:

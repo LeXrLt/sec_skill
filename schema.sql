@@ -3,12 +3,12 @@
 
 CREATE TABLE IF NOT EXISTS sec_edgar_filings (
     id              SERIAL PRIMARY KEY,
-    target_id       INTEGER         NOT NULL REFERENCES crawl_targets(id) ON DELETE CASCADE,
     accession_no    VARCHAR(30)     NOT NULL,
+    company_name    VARCHAR(500)    NOT NULL DEFAULT '',
+    cik             VARCHAR(20)     NOT NULL DEFAULT '',
     filing_type     VARCHAR(50)     NOT NULL DEFAULT '',
     title           VARCHAR(1000)   NOT NULL DEFAULT '',
     filed_at        VARCHAR(50)     DEFAULT NULL,
-    author          VARCHAR(500)    DEFAULT '',
     index_url       VARCHAR(1000)   NOT NULL DEFAULT '',
     summary         TEXT            DEFAULT '',
     local_paths     JSONB           NOT NULL DEFAULT '{}',
@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS sec_edgar_filings (
 );
 
 -- 索引
-CREATE INDEX IF NOT EXISTS idx_sec_edgar_filings_target
-    ON sec_edgar_filings (target_id);
+CREATE INDEX IF NOT EXISTS idx_sec_edgar_filings_cik
+    ON sec_edgar_filings (cik);
 CREATE INDEX IF NOT EXISTS idx_sec_edgar_filings_accno
     ON sec_edgar_filings (accession_no);
 CREATE INDEX IF NOT EXISTS idx_sec_edgar_filings_status

@@ -19,18 +19,15 @@ def ensure_tables(conn):
     print("[DB] 数据表检查/创建完成")
 
 
-def get_existing_accnos(conn, target_id: int) -> set[str]:
-    """查询指定 target 下已存在的 accession_no 集合，用于去重。"""
+def get_existing_accnos(conn) -> set[str]:
+    """查询已存在的 accession_no 集合，用于去重。"""
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT accession_no FROM sec_edgar_filings WHERE target_id = %s",
-            (target_id,),
-        )
+        cur.execute("SELECT accession_no FROM sec_edgar_filings")
         return {row[0] for row in cur.fetchall()}
 
 
-def insert_filing(conn, target_id: int, entry: dict, status: str = "ready") -> bool:
-    """插入一条 filing 记录。如果 accession_no 已存在则跳过，返回是否新增。"""
+def insert_filing(conn, entry: dict, company_name: str = "", cik: str = "", status: str = "ready") -> bool:
+    """插入一条 filing 记录。如果 accession_no 已存在则更新，返回是否成功。"""
     accno = entry.get("accession_no", "")
     if not accno:
         return False
@@ -39,8 +36,8 @@ def insert_filing(conn, target_id: int, entry: dict, status: str = "ready") -> b
         cur.execute(
             """
             INSERT INTO sec_edgar_filings
-                (target_id, accession_no, filing_type, title, filed_at,
-                 author, index_url, summary, local_paths, status, raw_data)
+                (accession_no, company_name, cik, filing_type, title, filed_at,
+                 index_url, summary, local_paths, status, raw_data)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (accession_no) DO UPDATE SET
                 local_paths = EXCLUDED.local_paths,
@@ -49,12 +46,12 @@ def insert_filing(conn, target_id: int, entry: dict, status: str = "ready") -> b
             RETURNING id
             """,
             (
-                target_id,
                 accno,
+                company_name,
+                cik,
                 entry.get("category", ""),
                 entry.get("title", ""),
                 entry.get("updated", ""),
-                entry.get("author", ""),
                 entry.get("link", ""),
                 entry.get("summary", ""),
                 json.dumps(entry.get("documents", {}), ensure_ascii=False),
