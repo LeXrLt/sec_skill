@@ -1,5 +1,10 @@
 """SEC EDGAR 爬虫配置"""
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # SEC EDGAR 页面 URL
 EDGAR_PAGE_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent"
 
@@ -41,3 +46,13 @@ DOWNLOAD_DELAY = 0.5      # 批次间延迟
 
 # 输出目录
 OUTPUT_DIR = "output"
+
+# PostgreSQL 数据库配置（financial_hub_postgres 插件，从 .env 读取）
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "127.0.0.1")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
+POSTGRES_USER = os.getenv("POSTGRES_USER", "")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "financial_hub")
+
+# 爬虫组件名称（用于 financial_hub_postgres 生命周期上报）
+COMPONENT_NAME = "sec_edgar_crawler"

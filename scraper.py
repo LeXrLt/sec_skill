@@ -19,10 +19,12 @@ SEC_BASE_URL = "https://www.sec.gov"
 class EdgarScraper:
     """SEC EDGAR 最新提交文件爬取器，基于 Atom RSS 订阅。"""
 
-    def __init__(self, total_count: int | None = None):
+    def __init__(self, total_count: int | None = None, cik: str = "", company: str = ""):
         self.session = requests.Session()
         self.session.headers.update(config.HEADERS)
-        self.rss_base = config.EDGAR_RSS_BASE
+        self.cik = cik
+        self.company = company
+        self.rss_base = self._build_rss_base()
         self.page_url = config.EDGAR_PAGE_URL
         self.page_size = config.PAGE_SIZE
         self.total_count = total_count if total_count is not None else config.TOTAL_COUNT
@@ -35,6 +37,19 @@ class EdgarScraper:
         self.output_dir = config.OUTPUT_DIR
 
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _build_rss_base(self) -> str:
+        """根据 CIK 或 company 构建 RSS 基础 URL。"""
+        return (
+            "https://www.sec.gov/cgi-bin/browse-edgar"
+            "?action=getcurrent"
+            f"&CIK={self.cik}"
+            "&type="
+            f"&company={self.company}"
+            "&dateb="
+            "&owner=include"
+            "&output=atom"
+        )
 
     # ------------------------------------------------------------------
     # 网络请求
