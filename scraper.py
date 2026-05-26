@@ -12,6 +12,7 @@ from lxml import html as lxml_html
 from urllib.parse import urljoin
 
 import config
+import db
 
 SEC_BASE_URL = "https://www.sec.gov"
 
@@ -19,15 +20,13 @@ SEC_BASE_URL = "https://www.sec.gov"
 class EdgarScraper:
     """SEC EDGAR 最新提交文件爬取器，基于 Atom RSS 订阅。"""
 
-    def __init__(self, total_count: int | None = None, cik: str = "", company: str = ""):
+    def __init__(self, cik: str = "", company: str = "", total_count: int | None = None):
         self.session = requests.Session()
         self.session.headers.update(config.HEADERS)
         self.cik = cik
         self.company = company
         self.rss_base = self._build_rss_base()
         self.page_url = config.EDGAR_PAGE_URL
-        self.page_size = config.PAGE_SIZE
-        self.total_count = total_count if total_count is not None else config.TOTAL_COUNT
         self.timeout = config.REQUEST_TIMEOUT
         self.max_retries = config.MAX_RETRIES
         self.retry_delay = config.RETRY_DELAY
@@ -39,11 +38,10 @@ class EdgarScraper:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _build_rss_base(self) -> str:
-        """根据 CIK 或 company 构建 RSS 基础 URL。"""
+        """根据 CIK 或 company 构建 RSS URL（不含分页参数，获取全部结果）。"""
         return (
             "https://www.sec.gov/cgi-bin/browse-edgar"
-            "?action=getcurrent"
-            f"&CIK={self.cik}"
+            f"?CIK={self.cik}"
             "&type="
             f"&company={self.company}"
             "&dateb="
@@ -71,45 +69,13 @@ class EdgarScraper:
                 else:
                     raise
 
-    def build_rss_url(self, start: int, count: int) -> str:
-        """构建带分页参数的 RSS URL。"""
-        return f"{self.rss_base}&start={start}&count={count}"
-
-    def fetch_rss_page(self, start: int, count: int) -> str:
-        """抓取单页 RSS/Atom 订阅的原始 XML 内容。"""
-        url = self.build_rss_url(start, count)
-        print(f"[*] 正在抓取 RSS (start={start}, count={count})")
-        return self.fetch_raw(url)
-
     def fetch_all_rss(self) -> list[dict[str, Any]]:
-        """分页抓取所有 RSS 订阅内容，直到达到 total_count 或无更多数据。"""
-        all_entries: list[dict[str, Any]] = []
-        pages = (self.total_count + self.page_size - 1) // self.page_size
-
-        for page in range(pages):
-            start = page * self.page_size
-            remaining = self.total_count - len(all_entries)
-            count = min(self.page_size, remaining)
-
-            xml_content = self.fetch_rss_page(start, count)
-            entries = self.parse_rss(xml_content)
-
-            if not entries:
-                print(f"[*] 第 {page + 1} 页无数据，停止分页")
-                break
-
-            all_entries.extend(entries)
-            print(f"[*] 累计获取: {len(all_entries)} 条")
-
-            if page < pages - 1 and len(entries) >= count:
-                time.sleep(self.page_delay)
-
-            if len(entries) < count:
-                print(f"[*] 本页返回 {len(entries)} 条 < 请求 {count} 条，已无更多数据")
-                break
-
-        print(f"[+] 分页抓取完成，共 {len(all_entries)} 条")
-        return all_entries
+        """抓取 RSS 订阅的全部内容（不分页）。"""
+        print(f"[*] 正在抓取 RSS: {self.rss_base}")
+        xml_content = self.fetch_raw(self.rss_base)
+        entries = self.parse_rss(xml_content)
+        print(f"[+] 抓取完成，共 {len(entries)} 条")
+        return entries
 
     def fetch_page(self) -> str:
         """抓取 EDGAR 页面的 HTML 内容。"""
@@ -262,19 +228,43 @@ class EdgarScraper:
 
         return filepath
 
-    def process_entries(self, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def process_entries(
+        self,
+        entries: list[dict[str, Any]],
+        conn=None,
+        target_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         """遍历每条记录，抓取 index 页面，下载 Document Format Files 表格中的
-        所有文档（html / xml / txt），每个 AccNo 建立独立文件夹。"""
+        所有文档（html / xml / txt），每个 AccNo 建立独立文件夹。
+        如果提供了 conn 和 target_id，则跳过已入库的记录并将新记录写入数据库。"""
         total = len(entries)
         downloaded_accnos: dict[str, dict[str, str]] = {}  # accno -> documents dict
         download_count = 0  # 累计下载计数，用于批次限速
 
+        # 查询已入库的 accession_no，用于去重
+        existing_accnos: set[str] = set()
+        if conn and target_id:
+            existing_accnos = db.get_existing_accnos(conn, target_id)
+            if existing_accnos:
+                print(f"[DB] 已有 {len(existing_accnos)} 条历史记录，将跳过重复项")
+
+        items_new = 0
+        items_skipped = 0
+
         for i, entry in enumerate(entries, 1):
             index_url = entry.get("link", "")
             accno = self._accno_from_index_url(index_url)
+            entry["accession_no"] = accno
             print(f"[*] ({i}/{total}) 处理: {entry['title'][:50]}...")
 
-            # 同一个 AccNo 已处理过，直接复用结果
+            # 数据库中已存在，跳过
+            if accno in existing_accnos:
+                entry["documents"] = {}
+                items_skipped += 1
+                print(f"    [✓] 已入库，跳过: {accno}")
+                continue
+
+            # 同一批次中同一个 AccNo 已处理过，直接复用结果
             if accno in downloaded_accnos:
                 entry["documents"] = downloaded_accnos[accno]
                 print(f"    [=] 复用已下载: {accno}")
@@ -284,6 +274,9 @@ class EdgarScraper:
             if not docs:
                 entry["documents"] = {}
                 downloaded_accnos[accno] = {}
+                # 记录到数据库（状态 failed）
+                if conn and target_id:
+                    db.insert_filing(conn, target_id, entry, status="failed")
                 continue
 
             filing_dir = os.path.join(self.output_dir, "filings", accno)
@@ -312,7 +305,13 @@ class EdgarScraper:
             entry["documents"] = documents
             downloaded_accnos[accno] = documents
 
-        return entries
+            # 写入数据库
+            if conn and target_id:
+                db.insert_filing(conn, target_id, entry, status="ready")
+                items_new += 1
+
+        print(f"[+] 处理完成: 新增 {items_new} 条，跳过 {items_skipped} 条")
+        return entries, items_new
 
     # ------------------------------------------------------------------
     # 内部工具方法
@@ -338,15 +337,17 @@ class EdgarScraper:
     # 高层接口
     # ------------------------------------------------------------------
 
-    def run(self) -> list[dict[str, Any]]:
-        """执行完整抓取流程: 分页抓取 → 下载 → 保存 → 打印。"""
+    def run(self, conn=None, target_id: int | None = None) -> tuple[list[dict[str, Any]], int]:
+        """执行完整抓取流程: 抓取 → 下载 → 入库 → 保存 → 打印。
+        返回 (entries, items_new)。"""
         entries = self.fetch_all_rss()
+        items_new = 0
 
         if entries:
-            entries = self.process_entries(entries)
+            entries, items_new = self.process_entries(entries, conn=conn, target_id=target_id)
             self.save_to_json(entries)
             self.print_entries(entries)
         else:
             print("[!] 未获取到任何提交记录")
 
-        return entries
+        return entries, items_new

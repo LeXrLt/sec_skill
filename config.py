@@ -8,21 +8,6 @@ load_dotenv()
 # SEC EDGAR 页面 URL
 EDGAR_PAGE_URL = "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent"
 
-# SEC EDGAR RSS (Atom) 订阅 URL（基础部分，不含 start/count）
-EDGAR_RSS_BASE = (
-    "https://www.sec.gov/cgi-bin/browse-edgar"
-    "?action=getcurrent"
-    "&CIK="
-    "&type="
-    "&company="
-    "&dateb="
-    "&owner=include"
-    "&output=atom"
-)
-
-# 分页参数
-PAGE_SIZE = 100    # 每页条数（SEC 最大值 100）
-TOTAL_COUNT = 1000 # 目标总抓取条数
 
 # HTTP 请求头 — SEC 要求提供 User-Agent 并包含联系邮箱
 HEADERS = {

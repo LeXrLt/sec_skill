@@ -11,6 +11,7 @@ env/
 
 # Output data
 output/
+documents/
 
 # IDE
 .vscode/

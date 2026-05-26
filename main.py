@@ -9,6 +9,7 @@ import psycopg2
 from financial_hub_postgres import FinancialHubClient
 
 import config
+import db
 from scraper import EdgarScraper
 
 
@@ -26,10 +27,6 @@ def get_db_connection():
 def main():
     parser = argparse.ArgumentParser(description="SEC EDGAR 最新提交文件抓取器")
     parser.add_argument(
-        "--count", type=int, default=None,
-        help="要抓取的记录总数（默认使用 config.TOTAL_COUNT）",
-    )
-    parser.add_argument(
         "--target-id", type=int, default=None,
         help="指定 crawl_target ID（不指定则从数据库查询 sec_edgar 类型的目标）",
     )
@@ -44,6 +41,9 @@ def main():
     client = FinancialHubClient(conn)
 
     try:
+        # 检测并创建数据表
+        db.ensure_tables(conn)
+
         # 确定 crawl target
         if args.target_id:
             target = client.get_crawl_target_by_id(args.target_id)
@@ -78,8 +78,8 @@ def main():
 
             start_time = time.time()
             try:
-                scraper = EdgarScraper(total_count=args.count, cik=cik, company=company)
-                entries = scraper.run()
+                scraper = EdgarScraper(cik=cik, company=company)
+                entries, items_new = scraper.run(conn=conn, target_id=target.id)
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 # 通知成功
@@ -89,10 +89,10 @@ def main():
                     component_name=config.COMPONENT_NAME,
                     success=True,
                     items_found=len(entries),
-                    items_new=len(entries),
+                    items_new=items_new,
                     duration_ms=duration_ms,
                 )
-                print(f"\n[完成] 共获取 {len(entries)} 条提交记录")
+                print(f"\n[完成] 共获取 {len(entries)} 条，新增 {items_new} 条")
 
             except Exception as e:
                 duration_ms = int((time.time() - start_time) * 1000)
