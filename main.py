@@ -30,6 +30,10 @@ def main():
         "--target-id", type=int, default=None,
         help="指定 crawl_target ID（不指定则从数据库查询 sec_edgar 类型的目标）",
     )
+    parser.add_argument(
+        "-f", "--file-path", type=str, default=None,
+        help="指定文件下载位置（默认使用 config.OUTPUT_DIR）",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -78,7 +82,7 @@ def main():
 
             start_time = time.time()
             try:
-                scraper = EdgarScraper(cik=cik, company=company)
+                scraper = EdgarScraper(cik=cik, company=company, output_dir=args.file_path)
                 entries, items_new = scraper.run(conn=conn)
                 duration_ms = int((time.time() - start_time) * 1000)
 

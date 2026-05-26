@@ -20,7 +20,7 @@ SEC_BASE_URL = "https://www.sec.gov"
 class EdgarScraper:
     """SEC EDGAR 最新提交文件爬取器，基于 Atom RSS 订阅。"""
 
-    def __init__(self, cik: str = "", company: str = "", total_count: int | None = None):
+    def __init__(self, cik: str = "", company: str = "", output_dir: str | None = None):
         self.session = requests.Session()
         self.session.headers.update(config.HEADERS)
         self.cik = cik
@@ -33,7 +33,7 @@ class EdgarScraper:
         self.page_delay = config.PAGE_DELAY
         self.download_batch = config.DOWNLOAD_BATCH
         self.download_delay = config.DOWNLOAD_DELAY
-        self.output_dir = config.OUTPUT_DIR
+        self.output_dir = output_dir if output_dir else config.OUTPUT_DIR
 
         os.makedirs(self.output_dir, exist_ok=True)
 
