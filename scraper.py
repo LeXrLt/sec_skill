@@ -252,6 +252,14 @@ class EdgarScraper:
 
         for i, entry in enumerate(entries, 1):
             index_url = entry.get("link", "")
+
+            # 跳过非 filing 条目（如公司搜索结果页面）
+            if "-index.htm" not in index_url:
+                print(f"[*] ({i}/{total}) 跳过非 filing 条目: {index_url}")
+                entry["accession_no"] = ""
+                entry["documents"] = {}
+                continue
+
             accno = self._accno_from_index_url(index_url)
             entry["accession_no"] = accno
             print(f"[*] ({i}/{total}) 处理: {entry['title'][:50]}...")
@@ -275,7 +283,11 @@ class EdgarScraper:
                 downloaded_accnos[accno] = {}
                 # 记录到数据库（状态 failed）
                 if conn:
-                    db.insert_filing(conn, entry, company_name=self.company, cik=self.cik, status="failed")
+                    try:
+                        db.insert_filing(conn, entry, company_name=self.company, cik=self.cik, status="failed")
+                    except Exception as db_err:
+                        conn.rollback()
+                        print(f"    [!] 入库失败: {db_err}")
                 continue
 
             filing_dir = os.path.join(self.output_dir, "filings", accno)
@@ -306,8 +318,12 @@ class EdgarScraper:
 
             # 写入数据库
             if conn:
-                db.insert_filing(conn, entry, company_name=self.company, cik=self.cik, status="ready")
-                items_new += 1
+                try:
+                    db.insert_filing(conn, entry, company_name=self.company, cik=self.cik, status="ready")
+                    items_new += 1
+                except Exception as db_err:
+                    conn.rollback()
+                    print(f"    [!] 入库失败: {db_err}")
 
         print(f"[+] 处理完成: 新增 {items_new} 条，跳过 {items_skipped} 条")
         return entries, items_new
