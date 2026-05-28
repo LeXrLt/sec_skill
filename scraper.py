@@ -9,7 +9,7 @@ from typing import Any
 import feedparser
 import requests
 from lxml import html as lxml_html
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, parse_qs, urlencode
 
 import config
 import db
@@ -232,10 +232,16 @@ class EdgarScraper:
         self,
         entries: list[dict[str, Any]],
         conn=None,
+        _depth: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         """遍历每条记录，抓取 index 页面，下载 Document Format Files 表格中的
         所有文档（html / xml / txt），每个 AccNo 建立独立文件夹。
-        如果提供了 conn，则跳过已入库的记录并将新记录写入数据库。"""
+        如果提供了 conn，则跳过已入库的记录并将新记录写入数据库。
+        _depth 用于限制递归深度，防止无限循环。"""
+        MAX_DEPTH = 2
+        if _depth >= MAX_DEPTH:
+            print(f"[!] 达到最大递归深度 {MAX_DEPTH}，停止下钻")
+            return entries, 0
         total = len(entries)
         downloaded_accnos: dict[str, dict[str, str]] = {}  # accno -> documents dict
         download_count = 0  # 累计下载计数，用于批次限速
@@ -249,13 +255,26 @@ class EdgarScraper:
 
         items_new = 0
         items_skipped = 0
+        all_sub_results: list[dict[str, Any]] = []
 
         for i, entry in enumerate(entries, 1):
             index_url = entry.get("link", "")
 
-            # 跳过非 filing 条目（如公司搜索结果页面）
+            # 非 filing 条目（如公司搜索结果页面），递归抓取下级 RSS
             if "-index.htm" not in index_url:
-                print(f"[*] ({i}/{total}) 跳过非 filing 条目: {index_url}")
+                sub_url = self._ensure_atom_output(index_url)
+                print(f"[*] ({i}/{total}) 非 filing 条目，递归抓取下级: {sub_url}")
+                try:
+                    sub_xml = self.fetch_raw(sub_url)
+                    sub_entries = self.parse_rss(sub_xml)
+                    if sub_entries:
+                        sub_results, sub_new = self.process_entries(
+                            sub_entries, conn=conn, _depth=_depth + 1
+                        )
+                        all_sub_results.extend(sub_results)
+                        items_new += sub_new
+                except Exception as e:
+                    print(f"    [!] 下级抓取失败: {e}")
                 entry["accession_no"] = ""
                 entry["documents"] = {}
                 continue
@@ -325,12 +344,24 @@ class EdgarScraper:
                     conn.rollback()
                     print(f"    [!] 入库失败: {db_err}")
 
+        # 合并子结果
+        entries.extend(all_sub_results)
         print(f"[+] 处理完成: 新增 {items_new} 条，跳过 {items_skipped} 条")
         return entries, items_new
 
     # ------------------------------------------------------------------
     # 内部工具方法
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ensure_atom_output(url: str) -> str:
+        """确保 URL 包含 output=atom 参数，若不存在则添加。"""
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        if "output" not in params:
+            separator = "&" if parsed.query else "?"
+            return f"{url}{separator}output=atom"
+        return url
 
     @staticmethod
     def _extract_category(entry) -> str:
