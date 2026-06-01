@@ -1,11 +1,6 @@
 ---
-name: sec-edgar-fetch
-description: >
-  Fetch the latest SEC EDGAR filings. The user can request a specific number
-  of recent filings (e.g. "查一下SEC上最近的100条记录", "Fetch the latest 50
-  SEC filings"). The skill scrapes the SEC EDGAR RSS feed, downloads all
-  associated documents (HTML, XML, TXT) for each filing, and saves structured
-  JSON output with metadata and file paths.
+name: sec-edgar-query
+description: Query SEC EDGAR filings stored in the local PostgreSQL database using natural language. Search filings by company, CIK, filing type, keyword, or date range; list companies; and view statistics. Read-only — no data modification.
 metadata:
   openclaw:
     emoji: "📊"
@@ -14,70 +9,119 @@ metadata:
         - python3
 ---
 
-# SEC EDGAR Filings Fetcher
+# SEC EDGAR Database Query Skill
 
-## When to use this skill
+This skill answers natural-language questions about SEC EDGAR filings that have
+been previously crawled and stored in a PostgreSQL database (`sec_edgar_filings` table).
 
-Use this skill when the user asks to:
-- Fetch / query / look up recent SEC EDGAR filings
-- 查 SEC / EDGAR 上的最新提交记录
-- Download SEC filing documents
-- Get the latest SEC submissions
+**This skill is strictly read-only. It never inserts, updates, or deletes any data.**
+
+## When to use
+
+Use this skill when the user wants to:
+- Read or search SEC EDGAR filings from the database
+- List companies / CIKs that have been crawled
+- Find filings by company name, CIK, filing type, keyword, or date range
+- View the full summary of a specific filing
+- Get statistics on crawled SEC filings
+
+Do **NOT** use this skill when the user wants to crawl/download new filings from
+SEC EDGAR (that is the crawler workflow in `main.py`).
+
+If the database is not yet set up (no `.venv/` or `.env`, or connection errors),
+run the **`sec-edgar-setup`** skill (`SKILL_SETUP.md`) first.
 
 ## How to use
 
-1. **Extract the count** from the user's message. If the user says a number
-   (e.g. "100条", "50 filings", "最近200条"), use that as `COUNT`. If no
-   number is specified, default to `100`.
+Translate the user's natural-language request into one of the commands below.
+All commands share the same base invocation:
 
-2. **Run the scraper** from the project directory `{baseDir}`:
+```bash
+{baseDir}/.venv/bin/python {baseDir}/query_db.py <command> [options]
+```
 
-   ```bash
-   cd {baseDir} && .venv/bin/python main.py --count COUNT
-   ```
+### 1. List companies
 
-   Replace `COUNT` with the actual number.
+```bash
+{baseDir}/.venv/bin/python {baseDir}/query_db.py companies
+```
 
-3. **Report the results** to the user:
-   - The JSON output file is saved under `{baseDir}/output/edgar_filings_<timestamp>.json`.
-   - Downloaded filing documents are organized under `{baseDir}/output/filings/<AccNo>/`.
-   - Each entry in the JSON contains `title`, `link`, `category`, `author`,
-     `updated`, `summary`, and a `documents` dict with paths to downloaded files.
+Returns every company/CIK that has filings, with counts and date ranges.
 
-## Examples
+### 2. Query filings
 
-| User says | Command |
-|---|---|
-| 查一下SEC上最近的100条记录 | `.venv/bin/python main.py --count 100` |
-| Fetch the latest 50 SEC filings | `.venv/bin/python main.py --count 50` |
-| 帮我爬取SEC EDGAR最新的200条提交 | `.venv/bin/python main.py --count 200` |
-| 看看SEC最近有什么提交 | `.venv/bin/python main.py --count 100` |
+```bash
+{baseDir}/.venv/bin/python {baseDir}/query_db.py filings [options]
+```
+
+Options:
+- `--cik CIK` — Filter by exact CIK
+- `--company NAME` — Filter by company name (fuzzy, case-insensitive)
+- `--type TYPE` — Filter by filing type (e.g. `4`, `8-K`, `10-K`)
+- `--search KEYWORD` — Search in title and summary (case-insensitive)
+- `--since YYYY-MM-DD` — Start date (inclusive)
+- `--until YYYY-MM-DD` — End date (inclusive)
+- `--limit N` — Max results (default: 20, max: 500)
+- `--offset N` — Skip first N results (for pagination)
+- `--id ID` — Fetch a single filing by its database ID
+- `--full` — Show complete summary instead of preview
+
+### 3. View statistics
+
+```bash
+{baseDir}/.venv/bin/python {baseDir}/query_db.py stats [--cik CIK]
+```
+
+Returns total filings, distinct company count, and counts by filing type with date ranges.
 
 ## Output format
 
-The JSON file contains an array of filing records:
+Each filing is output in a stable structured format:
 
-```json
-{
-  "title": "4 - Company Name (CIK) (Reporting)",
-  "link": "https://www.sec.gov/Archives/edgar/data/.../index.htm",
-  "summary": "Filed: 2026-05-01 AccNo: ...",
-  "updated": "2026-05-01T22:00:00-04:00",
-  "category": "4",
-  "author": "",
-  "documents": {
-    "html": "output/filings/<AccNo>/form4.html",
-    "xml": "output/filings/<AccNo>/form4.xml",
-    "txt": "output/filings/<AccNo>/<AccNo>.txt"
-  }
-}
+```
+ID: <id>
+标题: <title>
+来源: sec_edgar
+类型: <filing_type>
+公司: <company_name>
+CIK: <cik>
+提交编号: <accession_no>
+提交时间: <filed_at>
+原始链接: <index_url>
+状态: <status>
+本地文件: <local document paths>   (if present)
+摘要预览: <first 200 chars>        (default)
+--- 摘要 ---                       (with --full flag)
+<full summary>
 ```
 
-## Notes
+Filings are separated by `============` lines.
 
-- SEC limits each RSS page to 100 entries max; the script automatically
-  paginates to fetch the requested total.
-- The script includes retry logic (3 attempts) and rate-limiting delays
-  to avoid being blocked by SEC servers.
-- The `output/` directory is NOT cleared automatically between runs;
-  existing files are skipped if already downloaded.
+## Examples
+
+User says: "看看数据库里有哪些公司提交了SEC文件"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py companies`
+
+User says: "搜索SEC里关于merger的提交"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py filings --search merger`
+
+User says: "查一下CIK 0000320193 最近10条提交"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py filings --cik 0000320193 --limit 10`
+
+User says: "查 Apple 公司的 8-K 文件"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py filings --company Apple --type 8-K`
+
+User says: "查看ID为42的提交全文"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py filings --id 42 --full`
+
+User says: "2026年1月到3月的所有提交"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py filings --since 2026-01-01 --until 2026-03-31`
+
+User says: "SEC数据库里有多少提交记录"
+→ Run: `{baseDir}/.venv/bin/python {baseDir}/query_db.py stats`
+
+## Setup
+
+This skill shares the virtual environment and `.env` with the SEC crawler.
+If the environment is missing, run the `sec-edgar-setup` skill (`SKILL_SETUP.md`).
+Database connection is configured via `{baseDir}/.env` (read-only user).
