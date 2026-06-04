@@ -30,7 +30,9 @@ DOWNLOAD_BATCH = 10       # 每批次文件数
 DOWNLOAD_DELAY = 0.5      # 批次间延迟
 
 # 输出目录
-OUTPUT_DIR = "output"
+# 优先使用环境变量 CRAWLER_OUTPUT_DIR（由 financial_hub 在下载根目录后拼接 source_type 注入），
+# 未设置时回退到项目内 output 目录。
+OUTPUT_DIR = os.getenv("CRAWLER_OUTPUT_DIR", "output")
 
 # PostgreSQL 数据库配置（financial_hub_postgres 插件，从 .env 读取）
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "127.0.0.1")
