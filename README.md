@@ -68,3 +68,37 @@ A: 告诉 OpenClaw，比如"把每批下载数量改成 20"，它会帮你修改
 - "Fetch the latest 50 SEC filings"
 - "帮我爬取 SEC EDGAR 最新的 200 条提交"
 - "看看 SEC 最近有什么提交"
+
+---
+
+## 数据库结构
+
+抓取的数据存储在 PostgreSQL 数据库的 `sec_edgar_filings` 表中：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | SERIAL | 数据库自增主键 |
+| `accession_no` | VARCHAR(30) | SEC 提交唯一编号（如 `0001047469-16-010081`） |
+| `company_name` | VARCHAR(500) | 公司名称 |
+| `cik` | VARCHAR(20) | 公司 CIK 编号（Central Index Key） |
+| `filing_type` | VARCHAR(50) | 表单类型（如 `10-K`、`10-Q`、`8-K`、`4` 等） |
+| `title` | VARCHAR(1000) | 提交标题 |
+| `filed_at` | VARCHAR(50) | 提交时间（ISO 8601 格式） |
+| `index_url` | VARCHAR(1000) | SEC 官方索引页面链接 |
+| `summary` | TEXT | 提交摘要描述 |
+| `local_paths` | JSONB | 下载文件的本地绝对路径，键为 Type 字段（如 `{"10-Q": "/path/a.htm", "EX-32.2": "/path/b.htm"}`） |
+| `status` | VARCHAR(50) | 处理状态：`ready`（成功）、`failed`（失败）、`pending`（待处理） |
+| `raw_data` | JSONB | 原始抓取数据的完整备份 |
+| `created_at` | TIMESTAMPTZ | 数据库记录创建时间 |
+| `updated_at` | TIMESTAMPTZ | 数据库记录更新时间 |
+
+### 字段说明
+
+- **`filing_type`**：来自 SEC RSS feed 的表单类型代码，常见值包括：
+  - `10-K` — 年度报告
+  - `10-Q` — 季度报告
+  - `8-K` — 重大事件报告
+  - `4` — 内部交易报告
+  - `S-1` — 招股说明书
+
+- **`local_paths`**：存储下载到本地的所有文档路径，使用 SEC index 页面中 `Type` 列的值作为键（如 `10-Q`、`EX-31.1`、`EX-32.2`），方便区分财报正文与各类附件。值为绝对路径。
