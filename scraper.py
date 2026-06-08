@@ -71,13 +71,52 @@ class EdgarScraper:
                 else:
                     raise
 
+    def _build_paged_url(self, start: int = 0, count: int = 40) -> str:
+        """构建带分页参数的 RSS URL。"""
+        return f"{self.rss_base}&start={start}&count={count}"
+
     def fetch_all_rss(self) -> list[dict[str, Any]]:
-        """抓取 RSS 订阅的全部内容（不分页）。"""
-        print(f"[*] 正在抓取 RSS: {self.rss_base}")
-        xml_content = self.fetch_raw(self.rss_base)
-        entries = self.parse_rss(xml_content)
-        print(f"[+] 抓取完成，共 {len(entries)} 条")
-        return entries
+        """抓取 RSS 订阅的全部内容（自动分页，获取所有历史数据）。"""
+        all_entries: list[dict[str, Any]] = []
+        start = 0
+        page_size = 40  # SEC RSS 每页最大 40 条
+        page_num = 1
+
+        print(f"[*] 开始分页抓取 RSS，每页 {page_size} 条")
+
+        while True:
+            paged_url = self._build_paged_url(start, page_size)
+            print(f"[*] 第 {page_num} 页 (start={start}): {paged_url}")
+
+            try:
+                xml_content = self.fetch_raw(paged_url)
+                entries = self.parse_rss(xml_content)
+            except Exception as e:
+                print(f"[!] 第 {page_num} 页抓取失败: {e}")
+                break
+
+            if not entries:
+                print(f"[*] 第 {page_num} 页无数据，抓取完成")
+                break
+
+            all_entries.extend(entries)
+            print(f"[+] 第 {page_num} 页获取 {len(entries)} 条，累计 {len(all_entries)} 条")
+
+            # 如果本页不足 page_size，说明已到末尾
+            if len(entries) < page_size:
+                print(f"[*] 最后一页，抓取完成")
+                break
+
+            # 下一页
+            start += page_size
+            page_num += 1
+
+            # 分页延迟，避免触发 SEC 频率限制
+            if self.page_delay > 0:
+                time.sleep(self.page_delay)
+
+        print(f"[+] 分页抓取完成，共 {len(all_entries)} 条")
+        return all_entries
 
     def fetch_page(self) -> str:
         """抓取 EDGAR 页面的 HTML 内容。"""
