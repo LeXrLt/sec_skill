@@ -163,6 +163,16 @@ class EdgarScraper:
         basename = index_url.rsplit("/", 1)[-1]  # 0001193125-26-202063-index.htm
         return basename.replace("-index.htm", "").replace("-index.html", "")
 
+    @staticmethod
+    def _normalize_ix_url(url: str) -> str:
+        """将 SEC 交互式查看器链接 ix?doc=/path 转换为直接文件链接。
+        例: https://www.sec.gov/ix?doc=/Archives/edgar/data/.../xxx.htm
+        返回: https://www.sec.gov/Archives/edgar/data/.../xxx.htm
+        """
+        if "/ix?doc=" in url:
+            return url.replace("/ix?doc=", "")
+        return url
+
     def extract_document_urls(self, index_url: str) -> list[dict[str, str]]:
         """访问 filing index 页面，从 'Document Format Files' 表格中
         提取所有文档行的信息（html / xml / txt）。
@@ -195,10 +205,13 @@ class EdgarScraper:
             href = link_el[0].get("href", "")
             doc_name = link_el[0].text_content().strip()
             doc_type = cells[3].text_content().strip() if len(cells) > 3 else ""
+            raw_url = urljoin(SEC_BASE_URL, href)
+            # 转换 ix?doc= 动态链接为直接文件链接
+            normalized_url = self._normalize_ix_url(raw_url)
             docs.append({
                 "description": description,
                 "doc_name": doc_name,
-                "url": urljoin(SEC_BASE_URL, href),
+                "url": normalized_url,
                 "type": doc_type,
             })
 
@@ -314,8 +327,11 @@ class EdgarScraper:
 
             for doc in docs:
                 doc_name = doc["doc_name"]
-                # 根据文件扩展名归类
-                if doc_name.endswith(".html") or doc_name.endswith(".htm"):
+                # 优先使用 SEC 表格中的 Type 字段作为 key（如 10-Q、EX-32.2）
+                doc_type = doc.get("type", "").strip()
+                if doc_type:
+                    key = doc_type
+                elif doc_name.endswith(".html") or doc_name.endswith(".htm"):
                     key = "html"
                 elif doc_name.endswith(".xml"):
                     key = "xml"
