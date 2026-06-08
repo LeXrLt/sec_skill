@@ -34,6 +34,8 @@ class EdgarScraper:
         self.download_batch = config.DOWNLOAD_BATCH
         self.download_delay = config.DOWNLOAD_DELAY
         self.output_dir = output_dir if output_dir else config.OUTPUT_DIR
+        # 确保输出目录是绝对路径
+        self.output_dir = os.path.abspath(self.output_dir)
 
         os.makedirs(self.output_dir, exist_ok=True)
 
