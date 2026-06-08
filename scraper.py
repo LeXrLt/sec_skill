@@ -40,12 +40,11 @@ class EdgarScraper:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _build_rss_base(self) -> str:
-        """根据 CIK 或 company 构建 RSS URL（不含分页参数，获取全部结果）。"""
+        """根据 CIK 构建 RSS URL（不含分页参数，获取全部结果）。"""
         return (
             "https://www.sec.gov/cgi-bin/browse-edgar"
             f"?CIK={self.cik}"
             "&type="
-            f"&company={self.company}"
             "&dateb="
             "&owner=include"
             "&output=atom"

@@ -82,7 +82,7 @@ def main():
 
             start_time = time.time()
             try:
-                scraper = EdgarScraper(cik=cik, company=company, output_dir=args.file_path)
+                scraper = EdgarScraper(cik=cik, company=target.target_name, output_dir=args.file_path)
                 entries, items_new = scraper.run(conn=conn)
                 duration_ms = int((time.time() - start_time) * 1000)
 
