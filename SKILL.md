@@ -80,23 +80,34 @@ for r in hits[:10]:
 
 ```bash
 {baseDir}/.venv/bin/python -c "
-import sys, requests, re
-from lxml import etree
+import sys, time, requests, re
 kw = sys.argv[1].strip()
 ua = {'User-Agent': 'financial_web_fetch/1.0 (contact@example.com)'}
 url = ('https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany'
-       f'&company={requests.utils.quote(kw)}&type=&dateb=&owner=include&count=10&output=atom')
+       f'&company={requests.utils.quote(kw)}&type=&dateb=&owner=include&count=40&output=atom')
 xml = requests.get(url, headers=ua, timeout=60).content
-ciks = sorted(set(re.findall(rb'<CIK>(\d+)</CIK>', xml)))
-names = re.findall(rb'<conformed-name>(.*?)</conformed-name>', xml)
+# 注意：EDGAR atom 返回的是小写 <cik> 标签；多结果时 title 字段会损坏（显示 ARRAY(...)），
+# 因此公司名需另用 data.sec.gov 提交接口解析。
+ciks = sorted(set(re.findall(rb'<cik>(\d+)</cik>', xml)))
 if not ciks:
     print('NO_MATCH'); sys.exit(0)
 for c in ciks[:10]:
-    print(c.decode().zfill(10))
+    cik10 = c.decode().zfill(10)
+    try:
+        j = requests.get(f'https://data.sec.gov/submissions/CIK{cik10}.json', headers=ua, timeout=60).json()
+        recent = j.get('filings', {}).get('recent', {})
+        latest = list(zip(recent.get('form', [])[:3], recent.get('filingDate', [])[:3]))
+        print(f\"{cik10}\t{j.get('name','')}\t{latest}\")
+    except Exception as e:
+        print(f'{cik10}\t(name lookup failed: {e})')
+    time.sleep(0.3)
 " "用户的关键词"
 ```
 
-若仍 `NO_MATCH`，向用户说明未能在 SEC 找到该公司，请其确认拼写或提供股票代码/CIK。**不要**猜测或编造 CIK。
+输出每行为 `CIK<TAB>公司名<TAB>最近若干表单`。据此判断哪条是用户想要的实体（可借助公司名和最近表单类型佐证）：
+- 命中**唯一**明确实体 → 采用其 CIK。
+- 多条候选 → 用 `ask_user_question` 让用户确认。
+- 仍 `NO_MATCH` → 向用户说明未能在 SEC 找到该公司，请其确认拼写或直接提供 CIK。**不要**猜测或编造 CIK。
 
 ## Step 2: 注册或复用抓取目标（写 crawl_targets 表，非改代码）
 
