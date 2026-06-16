@@ -34,7 +34,18 @@ def main():
         "-f", "--file-path", type=str, default=None,
         help="指定文件下载位置（默认使用 config.OUTPUT_DIR）",
     )
+    parser.add_argument(
+        "-n", "--limit", type=int, default=100,
+        help="本次下载的新记录数上限（默认 100，最新数据已下载则向更早提交顺延）",
+    )
+    parser.add_argument(
+        "--all", action="store_true",
+        help="下载全部历史提交（忽略 --limit）",
+    )
     args = parser.parse_args()
+
+    # 默认仅下载最新的 N 条新记录；--all 时抓取全量历史
+    limit = None if args.all else args.limit
 
     print("=" * 60)
     print(" SEC EDGAR Latest Filings Scraper")
@@ -83,7 +94,7 @@ def main():
             start_time = time.time()
             try:
                 scraper = EdgarScraper(cik=cik, company=target.target_name, output_dir=args.file_path)
-                entries, items_new = scraper.run(conn=conn)
+                entries, items_new = scraper.run(conn=conn, limit=limit)
                 duration_ms = int((time.time() - start_time) * 1000)
 
                 # 通知成功

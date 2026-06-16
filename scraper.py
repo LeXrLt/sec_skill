@@ -439,9 +439,85 @@ class EdgarScraper:
     # 高层接口
     # ------------------------------------------------------------------
 
-    def run(self, conn=None) -> tuple[list[dict[str, Any]], int]:
+    def _collect_new_entries(self, conn, limit: int) -> list[dict[str, Any]]:
+        """按 RSS 分页从最新往更早遍历，跳过已入库的记录，
+        收集 limit 条尚未下载的新提交。
+
+        这样在最新数据已下载时会自动“往后顺延”，继续抓取更早、
+        尚未入库的提交，直到凑满 limit 条或抵达历史末尾。"""
+        existing: set[str] = db.get_existing_accnos(conn) if conn else set()
+        if existing:
+            print(f"[DB] 已有 {len(existing)} 条历史记录，将跳过并向更早的提交顺延")
+
+        collected: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        start = 0
+        page_size = 40  # SEC RSS 每页最大 40 条
+        page_num = 1
+
+        print(f"[*] 目标：收集最新的 {limit} 条新提交（每页 {page_size} 条）")
+
+        while len(collected) < limit:
+            paged_url = self._build_paged_url(start, page_size)
+            print(f"[*] 第 {page_num} 页 (start={start}): {paged_url}")
+            try:
+                xml_content = self.fetch_raw(paged_url)
+                entries = self.parse_rss(xml_content)
+            except Exception as e:
+                print(f"[!] 第 {page_num} 页抓取失败: {e}")
+                break
+
+            if not entries:
+                print("[*] 无更多数据，停止收集")
+                break
+
+            for entry in entries:
+                link = entry.get("link", "")
+                if "-index.htm" not in link:
+                    continue
+                accno = self._accno_from_index_url(link)
+                if accno in existing or accno in seen:
+                    continue
+                seen.add(accno)
+                collected.append(entry)
+                if len(collected) >= limit:
+                    break
+
+            # 本页不足 page_size，说明已到历史末尾
+            if len(entries) < page_size:
+                print("[*] 已到最早一页，停止收集")
+                break
+
+            start += page_size
+            page_num += 1
+            if self.page_delay > 0:
+                time.sleep(self.page_delay)
+
+        print(f"[+] 共收集到 {len(collected)} 条待下载的新提交")
+        return collected
+
+    def _run_limited(self, conn, limit: int) -> tuple[list[dict[str, Any]], int]:
+        """限量模式：仅下载最新的 limit 条新提交（已下载则往后顺延）。"""
+        entries = self._collect_new_entries(conn, limit)
+        items_new = 0
+
+        if entries:
+            entries, items_new = self.process_entries(entries, conn=conn)
+            self.save_to_json(entries)
+            self.print_entries(entries)
+        else:
+            print("[*] 没有需要下载的新提交（最新数据均已入库）")
+
+        return entries, items_new
+
+    def run(self, conn=None, limit: int | None = 100) -> tuple[list[dict[str, Any]], int]:
         """执行完整抓取流程: 抓取 → 下载 → 入库 → 保存 → 打印。
+
+        limit: 本次需要下载的新记录数上限，默认 100；传入 None 表示抓取全量历史。
         返回 (entries, items_new)。"""
+        if limit is not None:
+            return self._run_limited(conn=conn, limit=limit)
+
         entries = self.fetch_all_rss()
         items_new = 0
 
