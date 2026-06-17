@@ -152,18 +152,21 @@ conn.close()
 
 **默认行为：只下载最新的 100 条新提交。** 若这些已入库，会自动「往后顺延」抓取更早、尚未下载的提交，直到凑满 100 条或到达历史末尾。因此重复运行会逐步把更早的历史补齐，不会重复下载。
 
+**下载目录（重要）：** 本 skill 通常在 Codex 中由用户主动调用。当用户主动触发抓取时，**必须用 `-f` 把下载目录指定为 Codex 当前项目目录**（即用户当前所在的工作目录，下文记为 `{projectDir}`），把抓取结果落在用户项目里，而**不要**写入 skill 自身的 `{baseDir}/output/`。建议放到项目下的子目录以保持整洁：
+
 ```bash
-{baseDir}/.venv/bin/python {baseDir}/main.py --target-id <target_id>
+{baseDir}/.venv/bin/python {baseDir}/main.py --target-id <target_id> -f {projectDir}/sec_edgar_filings
 ```
 
-按需调整数量与范围：
+> `{projectDir}` 取 Codex 当前项目根目录（如不确定，可用当前工作目录 `pwd`）。仅在非 Codex 场景或用户明确要求时才省略 `-f`，此时回退到默认的 `{baseDir}/output/`。
+
+按需调整数量与范围（均与上面的 `-f` 组合使用）：
 
 | 用户意图 | 命令 |
 |---|---|
-| 默认（最新 100 条新提交） | `... main.py --target-id <id>` |
-| 指定数量（如最新 50 条） | `... main.py --target-id <id> -n 50` |
-| **用户明确要求全量历史** | `... main.py --target-id <id> --all` |
-| 指定下载目录 | 追加 `-f /目标/下载/目录`（默认输出到 `{baseDir}/output/`） |
+| 默认（最新 100 条新提交） | `... main.py --target-id <id> -f {projectDir}/sec_edgar_filings` |
+| 指定数量（如最新 50 条） | `... main.py --target-id <id> -n 50 -f {projectDir}/sec_edgar_filings` |
+| **用户明确要求全量历史** | `... main.py --target-id <id> --all -f {projectDir}/sec_edgar_filings` |
 
 **仅当用户明确要求「全部 / 全量 / all / 所有历史」时才使用 `--all`**，否则一律使用默认的 100 条限量模式，避免一次性抓取过多数据触发 SEC 频率限制。
 
@@ -172,7 +175,7 @@ conn.close()
 爬虫运行结束后向用户汇报：
 - 抓取的公司名与 CIK。
 - 本次「共获取 / 新增」的条数（见程序输出 `[完成]` 行）。
-- 结果位置：JSON 汇总在 `{baseDir}/output/` 下，原始文档在 `{baseDir}/output/filings/<accession_no>/`；数据同时写入数据库 `sec_edgar_filings` 表。
+- 结果位置：默认在 `-f` 指定的下载目录下（Codex 场景即 `{projectDir}/sec_edgar_filings/`）——JSON 汇总在该目录根，原始文档在其 `filings/<accession_no>/`；数据同时写入数据库 `sec_edgar_filings` 表。
 
 ## 完整示例
 
@@ -180,7 +183,7 @@ conn.close()
 1. Step 1 用 `AAPL` 解析 → `0000320193  AAPL  Apple Inc.`（精确匹配，直接采用）。
 2. 向用户回显："将抓取 Apple Inc.（CIK 0000320193）"。
 3. Step 2 注册/复用目标 → 得到 `target_id`。
-4. Step 3 运行 `main.py --target-id <id>`。
+4. Step 3 运行 `main.py --target-id <id> -f {projectDir}/sec_edgar_filings`（下载到 Codex 当前项目目录）。
 5. Step 4 汇报抓取条数与输出路径。
 
 用户："抓一下苹果公司的 filings"
